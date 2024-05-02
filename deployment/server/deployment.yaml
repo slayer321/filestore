@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: filestoreserver
+  name: filestoreserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: filestoreserver
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: filestoreserver
+    spec:
+      containers:
+      - image: 0xmantis/filestoreserver:0.0.1
+        name: filestoreserver
+        ports:
+        - containerPort: 8090
+status: {}

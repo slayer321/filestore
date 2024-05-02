@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: filestoreserver-service
+spec:
+  selector:
+    app: filestoreserver
+  ports:
+    - protocol: TCP
+      port: 8090
+      targetPort: 8090
