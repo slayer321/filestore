@@ -1,0 +1,1 @@
+The splitTextIntoWords function uses a regular expression pattern \b[\w']+\b to match words. This pattern matches sequences of alphanumeric characters and apostrophes (for contractions like "don't" or "it's") bounded by word boundaries (\b). It converts the matches to lowercase for case-insensitive counting.

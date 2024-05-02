@@ -55,11 +55,6 @@ func uploadFile(filePath string, uploadType string) error {
 	case "wc":
 		req, err = http.NewRequest("POST", serverURL+"/wc", body)
 	}
-	// if isUpdate {
-	// 	req, err = http.NewRequest("POST", serverURL+"/update", body)
-	// } else {
-	// 	req, err = http.NewRequest("POST", serverURL+"/store", body)
-	// }
 	if err != nil {
 		return err
 	}
@@ -73,25 +68,26 @@ func uploadFile(filePath string, uploadType string) error {
 
 	defer resp.Body.Close()
 
-	// resp, err := http.Post(serverURL+"/store", "multipart/form-data", file)
-	// if err != nil {
-	// 	return err
-	// }
-
 	respBody, _ := io.ReadAll(resp.Body)
-	// fmt.Printf("Printing the respBody %v\n", string(respBody))
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("upload failed: %s", resp.Status)
 	}
 
-	fmt.Printf("File %s uploaded successfully\n", string(respBody))
+	switch uploadType {
+	case "add":
+		fmt.Printf("File %s uploaded successfully\n", string(respBody))
+	case "update":
+		fmt.Printf("File %s updated successfully\n", string(respBody))
+	case "wc":
+		fmt.Println(string(respBody))
+	}
+
 	return nil
 
 }
 
 func listFiles() ([]string, error) {
-	//var fileList []string
 	req, err := http.NewRequest("GET", serverURL+"/list", nil)
 	if err != nil {
 		return nil, err
@@ -107,8 +103,6 @@ func listFiles() ([]string, error) {
 	if resp.StatusCode != http.StatusOK {
 		fmt.Errorf("unable to list the files %v", err)
 	}
-
-	//fmt.Printf("resp.Body: %v\n", resp.Body)
 	readBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalln(err)
@@ -119,8 +113,6 @@ func listFiles() ([]string, error) {
 }
 
 func removeFile(fileName string) error {
-
-	//readerBody := strings.NewReader(fileName)
 
 	req, err := http.NewRequest("POST", serverURL+"/rm", bytes.NewBufferString(fileName))
 	if err != nil {
@@ -165,17 +157,10 @@ func main() {
 	updateCommand := flag.NewFlagSet("update", flag.ExitOnError)
 	wordCountCommand := flag.NewFlagSet("wc", flag.ExitOnError)
 
-	// flag.StringVar(&rm, "rm", "", "Removes the given file")
-	// flag.Parse()
-	//uploadFilePath := uploadCommand.String("add", "", "Path of the file to upload")
-
 	switch os.Args[1] {
 	case "add":
 		uploadCommand.Parse(os.Args[2:])
-		// fmt.Printf("file path given by user %v\n", &uploadFilePath)
-		// if *uploadFilePath == "" {
-		// 	log.Fatal("Please provide a file path using the -add flag")
-		// }
+
 		if len(uploadCommand.Args()) < 0 {
 			log.Fatal("Please provide at lease single file")
 		}
@@ -229,7 +214,11 @@ func main() {
 			}
 		}
 	default:
-		fmt.Println("Please provide the explected command Invalid command")
+		fmt.Println("Please provide the expected command Invalid command")
+		uploadCommand.Usage()
+		updateCommand.Usage()
+		wordCountCommand.Usage()
+		removeCommand.Usage()
 		os.Exit(1)
 	}
 
