@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 )
 
 const (
@@ -18,16 +19,15 @@ const (
 var (
 	store string
 	list  string
+	rm    string
 )
 
-func uploadFile(filePath string) error {
+func uploadFile(filePath string, uploadType string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
-	fmt.Printf("Name of the file is %s\n", file.Name())
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -45,8 +45,21 @@ func uploadFile(filePath string) error {
 	if err != nil {
 		return err
 	}
+	var req *http.Request
 
-	req, err := http.NewRequest("POST", serverURL+"/store", body)
+	switch uploadType {
+	case "add":
+		req, err = http.NewRequest("POST", serverURL+"/store", body)
+	case "update":
+		req, err = http.NewRequest("POST", serverURL+"/update", body)
+	case "wc":
+		req, err = http.NewRequest("POST", serverURL+"/wc", body)
+	}
+	// if isUpdate {
+	// 	req, err = http.NewRequest("POST", serverURL+"/update", body)
+	// } else {
+	// 	req, err = http.NewRequest("POST", serverURL+"/store", body)
+	// }
 	if err != nil {
 		return err
 	}
@@ -66,28 +79,28 @@ func uploadFile(filePath string) error {
 	// }
 
 	respBody, _ := io.ReadAll(resp.Body)
-	fmt.Printf("Printing the respBody %v\n", string(respBody))
+	// fmt.Printf("Printing the respBody %v\n", string(respBody))
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("upload failed: %s", resp.Status)
 	}
 
-	fmt.Println("File uploaded successfully")
+	fmt.Printf("File %s uploaded successfully\n", string(respBody))
 	return nil
 
 }
 
-func listFiles() error {
-
+func listFiles() ([]string, error) {
+	//var fileList []string
 	req, err := http.NewRequest("GET", serverURL+"/list", nil)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -100,22 +113,65 @@ func listFiles() error {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	files := strings.Split(string(readBytes), "-")
+	return files, nil
 
-	fmt.Printf("%v", string(readBytes))
+}
+
+func removeFile(fileName string) error {
+
+	//readerBody := strings.NewReader(fileName)
+
+	req, err := http.NewRequest("POST", serverURL+"/rm", bytes.NewBufferString(fileName))
+	if err != nil {
+		return err
+	}
+
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Println("Unable to remove the file from server")
+	}
 
 	return nil
+
+}
+
+func checkDup(fileName string) (bool, error) {
+	files, err := listFiles()
+	if err != nil {
+		return false, err
+	}
+	for _, oldfile := range files {
+		trimOldfile := strings.TrimSpace(oldfile)
+		if trimOldfile == fileName {
+			log.Printf("file name %s already exists in the server\n", fileName)
+			return true, nil
+		}
+	}
+	return false, nil
 
 }
 
 func main() {
 
 	uploadCommand := flag.NewFlagSet("add", flag.ExitOnError)
-	uploadCommand.Parse(os.Args[2:])
+	removeCommand := flag.NewFlagSet("rm", flag.ExitOnError)
+	updateCommand := flag.NewFlagSet("update", flag.ExitOnError)
+	wordCountCommand := flag.NewFlagSet("wc", flag.ExitOnError)
+
+	// flag.StringVar(&rm, "rm", "", "Removes the given file")
+	// flag.Parse()
 	//uploadFilePath := uploadCommand.String("add", "", "Path of the file to upload")
 
 	switch os.Args[1] {
 	case "add":
-
+		uploadCommand.Parse(os.Args[2:])
 		// fmt.Printf("file path given by user %v\n", &uploadFilePath)
 		// if *uploadFilePath == "" {
 		// 	log.Fatal("Please provide a file path using the -add flag")
@@ -124,19 +180,56 @@ func main() {
 			log.Fatal("Please provide at lease single file")
 		}
 		for _, file := range uploadCommand.Args() {
-			err := uploadFile(file)
+			isDupe, _ := checkDup(file)
+			if isDupe {
+				continue
+			}
+			err := uploadFile(file, "add")
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
 	case "ls":
 
-		err := listFiles()
+		files, err := listFiles()
 		if err != nil {
 			log.Fatal(err)
 		}
+		for _, file := range files {
+			fmt.Printf("%v\n", strings.TrimSpace(file))
+		}
+	case "rm":
+		removeCommand.Parse(os.Args[2:])
+		fmt.Printf("Remove file name is %s\n", removeCommand.Args()[0])
+		err := removeFile(removeCommand.Args()[0])
+		if err != nil {
+			fmt.Printf("Not able to delete the file %s due to error %v", rm, err)
+		}
+
+	case "update":
+		updateCommand.Parse(os.Args[2:])
+		if len(updateCommand.Args()) < 0 {
+			log.Fatal("Please provide at lease single file")
+		}
+		for _, file := range updateCommand.Args() {
+			err := uploadFile(file, "update")
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	case "wc":
+		wordCountCommand.Parse(os.Args[2:])
+		if len(wordCountCommand.Args()) < 0 {
+			log.Fatal("Please provide at lease single file")
+		}
+		for _, file := range wordCountCommand.Args() {
+			err := uploadFile(file, "wc")
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 	default:
-		fmt.Println("Invalid command")
+		fmt.Println("Please provide the explected command Invalid command")
 		os.Exit(1)
 	}
 
