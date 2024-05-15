@@ -2,16 +2,23 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 const (
 	fileDir = "./filestoredir"
+)
+
+var (
+	KeyValueSlice []KeyValue
+	freqWord      = make(map[string]int)
 )
 
 func addAndUpdateFile(w http.ResponseWriter, r *http.Request) {
@@ -101,8 +108,73 @@ func wc(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Printf("Number of word count in the file name %s is %d", fileHeader.Filename, len(wordSlice))
-		fmt.Fprintln(w, fmt.Sprintf(" %d , %s", len(wordSlice), fileHeader.Filename))
+		fmt.Fprintf(w, fmt.Sprintf(" %d , %s", len(wordSlice), fileHeader.Filename))
 	}
+}
+
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value int    `json:"value"`
+}
+
+func freqWords(w http.ResponseWriter, r *http.Request) {
+	files, err := os.ReadDir(fileDir)
+	if err != nil {
+		http.Error(w, "Unable to read the Dir", http.StatusInternalServerError)
+	}
+
+	//freqWord = make(map[string]int)
+
+	for _, file := range files {
+		fmt.Printf("name of the file %s\n", file.Name())
+		if file.IsDir() {
+			// Skip directories
+			continue
+		}
+		filePath := filepath.Join(fileDir, file.Name())
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			http.Error(w, "Unable to read file", http.StatusInternalServerError)
+		}
+		fileScanner := bufio.NewScanner(file)
+		fileScanner.Split(bufio.ScanWords)
+		for fileScanner.Scan() {
+			if freqWord[fileScanner.Text()] > 0 {
+				freqWord[fileScanner.Text()] += 1
+			} else {
+				freqWord[fileScanner.Text()] = 1
+			}
+		}
+	}
+	result := sortByValue(freqWord)
+	jsonResponse, err := json.Marshal(result)
+	if err != nil {
+		http.Error(w, "unable to marshal result", http.StatusInternalServerError)
+	}
+	w.Write(jsonResponse)
+}
+
+func sortByValue(valuesMap map[string]int) []KeyValue {
+
+	for key, value := range valuesMap {
+
+		found := false
+		for _, kv := range KeyValueSlice {
+			if kv.Key == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			KeyValueSlice = append(KeyValueSlice, KeyValue{Key: key, Value: value})
+		}
+	}
+
+	sort.Slice(KeyValueSlice, func(i, j int) bool {
+		return KeyValueSlice[i].Value > KeyValueSlice[j].Value
+	})
+	return KeyValueSlice
 }
 
 func main() {
@@ -119,6 +191,7 @@ func main() {
 	mux.HandleFunc("/rm", removeFile)
 	mux.HandleFunc("/update", addAndUpdateFile)
 	mux.HandleFunc("/wc", wc)
+	mux.HandleFunc("/freqwords", freqWords)
 
 	fmt.Println("Starting the server at port 8090")
 	http.ListenAndServe(":8090", mux)

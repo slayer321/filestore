@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -17,9 +18,8 @@ const (
 )
 
 var (
-	store string
-	list  string
-	rm    string
+	rm string
+	n  int
 )
 
 func uploadFile(filePath string, uploadType string) error {
@@ -54,6 +54,8 @@ func uploadFile(filePath string, uploadType string) error {
 		req, err = http.NewRequest("POST", serverURL+"/update", body)
 	case "wc":
 		req, err = http.NewRequest("POST", serverURL+"/wc", body)
+	case "freq-words":
+		req, err = http.NewRequest("POST", serverURL+"/freqwords", body)
 	}
 	if err != nil {
 		return err
@@ -134,6 +136,44 @@ func removeFile(fileName string) error {
 
 }
 
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value int    `json:"value"`
+}
+
+func freqWordsCount(n int) error {
+	req, err := http.NewRequest("POST", serverURL+"/freqwords", nil)
+	if err != nil {
+		return fmt.Errorf("unable to create the newrequest %v", err)
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("upload failed: %s", resp.Status)
+	}
+	var kv []KeyValue
+	err = json.Unmarshal(respBody, &kv)
+	if err != nil {
+		fmt.Printf("Unable to unmarshal %v\n", err)
+	}
+	for i, val := range kv {
+		if i == n {
+			break
+		}
+		fmt.Println(val.Key, val.Value)
+
+	}
+	return nil
+}
+
 func checkDup(fileName string) (bool, error) {
 	files, err := listFiles()
 	if err != nil {
@@ -151,11 +191,12 @@ func checkDup(fileName string) (bool, error) {
 }
 
 func main() {
-
 	uploadCommand := flag.NewFlagSet("add", flag.ExitOnError)
 	removeCommand := flag.NewFlagSet("rm", flag.ExitOnError)
 	updateCommand := flag.NewFlagSet("update", flag.ExitOnError)
 	wordCountCommand := flag.NewFlagSet("wc", flag.ExitOnError)
+	freqWords := flag.NewFlagSet("freq-words", flag.ExitOnError)
+	freqWords.IntVar(&n, "n", 10, "numbers of frequent words you want")
 
 	switch os.Args[1] {
 	case "add":
@@ -213,6 +254,13 @@ func main() {
 				log.Fatal(err)
 			}
 		}
+	case "freq-words":
+		freqWords.Parse(os.Args[2:])
+		err := freqWordsCount(n)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 	default:
 		fmt.Println("Please provide the expected command Invalid command")
 		uploadCommand.Usage()
