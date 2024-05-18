@@ -2,14 +2,19 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
+	"sync"
+	"syscall"
+	"time"
 )
 
 const (
@@ -177,6 +182,38 @@ func sortByValue(valuesMap map[string]int) []KeyValue {
 	return KeyValueSlice
 }
 
+func startHttpServer(ctx context.Context, wg *sync.WaitGroup, handler http.Handler) {
+	defer wg.Done()
+	server := http.Server{
+		Addr:    ":8090",
+		Handler: handler,
+	}
+
+	go func() {
+
+		fmt.Println("Starting the server at port 8090")
+
+		err := server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		timeCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+		err := server.Shutdown(timeCtx)
+		if err != nil {
+			log.Fatalf("Error in shutting down the server %v", err)
+		}
+
+		os.RemoveAll(fileDir)
+		log.Println("Shutdown Completed")
+	}
+
+}
+
 func main() {
 
 	err := os.Mkdir(fileDir, os.ModePerm)
@@ -193,6 +230,22 @@ func main() {
 	mux.HandleFunc("/wc", wc)
 	mux.HandleFunc("/freqwords", freqWords)
 
-	fmt.Println("Starting the server at port 8090")
-	http.ListenAndServe(":8090", mux)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go startHttpServer(ctx, &wg, mux)
+
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
+
+	<-signalCh
+
+	fmt.Println("\nGracefully shutting down HTTP server...")
+
+	cancel()
+	wg.Wait()
+
+	log.Println("Stopped the Server")
+
 }
