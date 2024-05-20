@@ -114,9 +114,13 @@ func listFiles() ([]string, error) {
 
 }
 
-func removeFile(fileName string) error {
+func removeFile(fileName []string) error {
+	fileNameBytes, err := json.Marshal(fileName)
+	if err != nil {
+		log.Fatalf("failed to marshal the fileName bytes %v\n", fileNameBytes)
+	}
 
-	req, err := http.NewRequest("POST", serverURL+"/rm", bytes.NewBufferString(fileName))
+	req, err := http.NewRequest("POST", serverURL+"/rm", bytes.NewBuffer(fileNameBytes))
 	if err != nil {
 		return err
 	}
@@ -131,6 +135,11 @@ func removeFile(fileName string) error {
 	if resp.StatusCode != http.StatusOK {
 		log.Println("Unable to remove the file from server")
 	}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("Unable to read the response body %v\n", err)
+	}
+	fmt.Println(string(respBody))
 
 	return nil
 
@@ -202,8 +211,8 @@ func main() {
 	case "add":
 		uploadCommand.Parse(os.Args[2:])
 
-		if len(uploadCommand.Args()) < 0 {
-			log.Fatal("Please provide at lease single file")
+		if len(uploadCommand.Args()) < 1 {
+			log.Fatal("Please provide at least single file")
 		}
 		for _, file := range uploadCommand.Args() {
 			isDupe, _ := checkDup(file)
@@ -226,16 +235,18 @@ func main() {
 		}
 	case "rm":
 		removeCommand.Parse(os.Args[2:])
-		fmt.Printf("Remove file name is %s\n", removeCommand.Args()[0])
-		err := removeFile(removeCommand.Args()[0])
+		if len(removeCommand.Args()) < 1 {
+			log.Fatal("Please provide at least single file")
+		}
+		err := removeFile(removeCommand.Args())
 		if err != nil {
 			fmt.Printf("Not able to delete the file %s due to error %v", rm, err)
 		}
 
 	case "update":
 		updateCommand.Parse(os.Args[2:])
-		if len(updateCommand.Args()) < 0 {
-			log.Fatal("Please provide at lease single file")
+		if len(updateCommand.Args()) < 1 {
+			log.Fatal("Please provide at least single file")
 		}
 		for _, file := range updateCommand.Args() {
 			err := uploadFile(file, "update")
@@ -245,8 +256,8 @@ func main() {
 		}
 	case "wc":
 		wordCountCommand.Parse(os.Args[2:])
-		if len(wordCountCommand.Args()) < 0 {
-			log.Fatal("Please provide at lease single file")
+		if len(wordCountCommand.Args()) < 1 {
+			log.Fatal("Please provide at least single file")
 		}
 		for _, file := range wordCountCommand.Args() {
 			err := uploadFile(file, "wc")

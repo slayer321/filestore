@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -23,7 +24,9 @@ const (
 
 var (
 	KeyValueSlice []KeyValue
-	freqWord      = make(map[string]int)
+	allFileName   []string
+
+	freqWord = make(map[string]int)
 )
 
 func addAndUpdateFile(w http.ResponseWriter, r *http.Request) {
@@ -73,19 +76,55 @@ func listFiles(w http.ResponseWriter, _ *http.Request) {
 }
 
 func removeFile(w http.ResponseWriter, r *http.Request) {
+	filesNameOnServer := make(map[string]bool)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Unable to read the request body", http.StatusInternalServerError)
 	}
-	fileName := string(body)
-	rootPath := fileDir + "/" + fileName
 
-	err = os.Remove(rootPath)
+	err = json.Unmarshal(body, &allFileName)
 	if err != nil {
-		log.Printf("Not able to delete the file from the server %v", err)
-		http.Error(w, "Not able to delete the file from the server", http.StatusInternalServerError)
+		http.Error(w, "Failed to unmarshall all files names", http.StatusInternalServerError)
 	}
-	log.Printf("Removed file %s from the server", fileName)
+
+	files, err := os.ReadDir(fileDir)
+	if err != nil {
+		http.Error(w, "Unable to read the Dir", http.StatusInternalServerError)
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			// Skip directories
+			continue
+		}
+		filesNameOnServer[file.Name()] = true
+	}
+	fmt.Printf("allFileName %v\n", allFileName)
+	fmt.Printf("filesNameOnServer %v\n", filesNameOnServer)
+	var notAvailableFiles []string
+
+	for _, clientFile := range allFileName {
+		if !filesNameOnServer[clientFile] {
+			notAvailableFiles = append(notAvailableFiles, clientFile)
+			continue
+		}
+		rootPath := fileDir + "/" + clientFile
+
+		err = os.Remove(rootPath)
+		if err != nil {
+			log.Printf("Not able to delete the file from the server %v", err)
+			http.Error(w, "Not able to delete the file from the server", http.StatusInternalServerError)
+		}
+		log.Printf("Removed file %s from the server", clientFile)
+
+	}
+
+	if len(notAvailableFiles) != 0 {
+		log.Printf("Can't remove this files as it is not available on filestore server %v", strings.Join(notAvailableFiles, ","))
+		fmt.Fprintf(w, "Can't remove this files as it is not available on filestore server %v", strings.Join(notAvailableFiles, ","))
+	} else {
+		fmt.Fprintf(w, "Removed files %v", strings.Join(allFileName, ","))
+	}
 }
 
 func wc(w http.ResponseWriter, r *http.Request) {
